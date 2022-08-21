@@ -1,7 +1,7 @@
 Event,Info
-0,Medley,"75 second time limit / 335 kg chain drag, 2x 105 kg keg load "
-1, Truck Pull,20000 kg / 25 meters / 75 second time limit 
-2, Deadlift,"75 second time limit / 7 lifts, 270 to 363 kg "
-3, Fingal's Fingers,5 implements / 75 second time limit / 200 to 320 kg 
-4, Keg Toss,"8 implements / 75 second time limit / 17 to 24 kg, 5.00 metres "
-5, Atlas Stones,5 implements / 75 second time limit / 100 to 160 kg
+Medley,"75 second time limit / 335 kg chain drag, 2x 105 kg keg load "
+ Truck Pull,20000 kg / 25 meters / 75 second time limit 
+ Deadlift,"75 second time limit / 7 lifts, 270 to 363 kg "
+ Fingal's Fingers,5 implements / 75 second time limit / 200 to 320 kg 
+ Keg Toss,"8 implements / 75 second time limit / 17 to 24 kg, 5.00 metres "
+ Atlas Stones,5 implements / 75 second time limit / 100 to 160 kg

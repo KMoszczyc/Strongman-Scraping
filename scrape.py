@@ -49,7 +49,6 @@ def load_competitions_page_selenium(url):
         driver.close()
     return BeautifulSoup(text, "lxml")
 
-
 def load_page_v2(url):
     """Load competition page with results and event data, but without Selenium becouse it's slow."""
 
@@ -148,7 +147,7 @@ def save_to_csv(data_dfs, dir_path, competition_name, is_wsm):
 def parse_all_competitions(url, dir_name, is_wsm):
     """Parse all competitions from a specified comp type ex. WSM, Arnold Classic etc."""
 
-    page = load_page_v2(url)
+    page = load_competitions_page_selenium(url)
     table = page.find('table', id='CompTable')
 
     rows = table.find_all('tr')[1:]
@@ -167,4 +166,4 @@ def create_dir(path):
 
 # parse_competition('2017 Arnold South America', 'https://strongmanarchives.com/viewContest.php?id=267', 'arnold_classifiers', is_wsm=False)
 
-parse_all_competitions(ROGUE_INVITATIONAL_URL, 'rogue', is_wsm=False)
+parse_all_competitions(WSM_URL, 'wsm', is_wsm=True)
