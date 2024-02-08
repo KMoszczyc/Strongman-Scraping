@@ -30,7 +30,9 @@ DATA_DIR = 'data/'
 
 
 def load_page(url):
-    driver = webdriver.Chrome(ChromeDriverManager().install())
+    # driver = webdriver.Chrome(ChromeDriverManager().install())
+    driver = webdriver.Chrome()
+
     try:
         driver.get(url)
         time.sleep(1)
@@ -44,7 +46,8 @@ def load_page(url):
 
 
 def load_competitions_page_selenium(url):
-    driver = webdriver.Chrome(ChromeDriverManager().install())
+    # driver = webdriver.Chrome(ChromeDriverManager().install())
+    driver = webdriver.Chrome()
     try:
         driver.get(url)
         select_fr = Select(driver.find_element(by='name', value='CompTable_length'))
@@ -215,7 +218,7 @@ def preprocess_event_info(results_df, event_info_df):
         for info in info_split:
             info = remove_braces(info).strip()
             info_lower = info.lower()
-            results_with_in = [s for s in list(results_df[event_name]) if ' in ' in s]
+            # results_with_in = [s for s in list(results_df[event_name]) if ' in ' in s]
 
             if 'second time limit' in info:
                 info_dict['time_limit'] = get_int_before_word(info, 'second time limit')
@@ -260,9 +263,10 @@ def preprocess_event_info(results_df, event_info_df):
         preprocessed_event_info.insert(i, info_dict)
 
     preprocessed_event_info = preprocess_results(all_event_names, event_results_df, event_points_df, event_info_df, preprocessed_event_info)
-
     preprocessed_event_info_df = pd.DataFrame(preprocessed_event_info)
     print(preprocessed_event_info_df)
+
+    return preprocessed_event_info_df
 
 
 def preprocess_results(all_event_names, event_results_df, event_points_df, event_info_df, preprocessed_event_info):
@@ -309,14 +313,14 @@ def preprocess_results(all_event_names, event_results_df, event_points_df, event
         print(unsorted_result_points_df[event_name].tolist())
         unsorted_result_values_df[event_name] = remap_list(final_results, unsorted_result_points_df[event_name].tolist())
 
-    print('----------------------Unsorted---------------------')
-    print(unsorted_result_points_df)
-    print(unsorted_result_values_df)
-
-    print('----------------------Sorted---------------------')
-    print(sorted_result_points_df)
-    print(sorted_result_units_df)
-    print(sorted_result_values_df)
+    # print('----------------------Unsorted---------------------')
+    # print(unsorted_result_points_df)
+    # print(unsorted_result_values_df)
+    #
+    # print('----------------------Sorted---------------------')
+    # print(sorted_result_points_df)
+    # print(sorted_result_units_df)
+    # print(sorted_result_values_df)
 
     return preprocessed_event_info
 
@@ -424,7 +428,9 @@ def get_implements(split_str, info):
 
 
 def handle_weight_info(info, info_dict):
+
     weights = get_weights(info)
+    # print(info, info_dict, weights)
     info_dict['min_weight'] = min(weights)
     info_dict['max_weight'] = max(weights)
     info_dict['weights'] = weights
@@ -457,14 +463,32 @@ def preprocess_csvs(src, dst):
             events_df = pd.read_csv(events_path, sep=',')
             results_df = pd.read_csv(results_path, sep=',')
 
-            preprocess_event_info(results_df)
+            processed_event_df = preprocess_event_info(results_df, events_df)
             print('file:', events_df, results_df)
 
     # preprocess_event_info([], a)
 
+def read_data(events_path, results_path):
+    events_df = pd.read_csv(events_path, sep=',')
+    results_df = pd.read_csv(results_path, sep=',')
+    preprocessed_events_df = preprocess_event_info(results_df, events_df)
+
+    year = get_ints(results_path)[0]
+    results_df['Year'] = year
+    events_df['Year'] = year
+    preprocessed_events_df['Year'] = year
+    events_df['Event'] = events_df['Event'].str.strip()
+
+    comp_name = remove_numbers(os.path.splitext(os.path.basename(events_path))[0])
+    events_df['Comp name'] = comp_name
+    results_df['Comp name'] = comp_name
+    preprocessed_events_df['Comp name'] = comp_name
+
+    return events_df, preprocessed_events_df, results_df
 
 def merge_data(src, dst):
     event_info_dfs = []
+    processed_event_info_dfs = []
     results_pts_dfs = []
     results_details_dfs = []
 
@@ -479,43 +503,41 @@ def merge_data(src, dst):
             events_path = os.path.join(root, name)
             results_path = events_path.replace('events', 'results')
 
-            events_df = pd.read_csv(events_path, sep=',')
-            results_df = pd.read_csv(results_path, sep=',')
+            events_df, preprocessed_events_df, results_df = read_data(events_path, results_path)
 
-            results_df['Year'] = get_ints(results_path)[0]
-            events_df['Year'] = get_ints(results_path)[0]
-
-            comp_name = remove_numbers(os.path.splitext(os.path.basename(events_path))[0])
-            events_df['Comp name'] = comp_name
-            results_df['Comp name'] = comp_name
-
-            pts_cols = [col for col in results_df.columns if 'pts' in col.lower()]
+            pts_cols = [col.strip() for col in results_df.columns if 'pts' in col.lower()]
             default_cols = ['Year', 'Comp name', '#', 'Competitor', 'Country']
-            not_pts_cols = [col for col in results_df.columns if col not in pts_cols]
+            not_pts_cols = [col.strip() for col in results_df.columns if col not in pts_cols]
 
-            print(pts_cols, not_pts_cols)
+            # print(pts_cols, not_pts_cols)
             results_pts_df = results_df[default_cols + pts_cols]
             results_details_df = results_df[not_pts_cols]
 
             event_info_dfs.append(events_df)
+            processed_event_info_dfs.append(preprocessed_events_df)
             results_pts_dfs.append(results_pts_df)
             results_details_dfs.append(results_details_df)
 
     # Merge dfs
     events_merged_df = pd.concat(event_info_dfs, axis=0)
+    preprocessed_events_merged_df = pd.concat(processed_event_info_dfs, axis=0)
     results_pts_merged_df = pd.concat(results_pts_dfs, axis=0)
     results_details_merged_df = pd.concat(results_details_dfs, axis=0)
 
     # Reorder cols
     events_merged_df.insert(0, 'Year', events_merged_df.pop('Year'))
+    preprocessed_events_merged_df.insert(0, 'Year', preprocessed_events_merged_df.pop('Year'))
     results_pts_merged_df.insert(0, 'Year', results_pts_merged_df.pop('Year'))
     results_details_merged_df.insert(0, 'Year', results_details_merged_df.pop('Year'))
+
     events_merged_df.insert(1, 'Comp name', events_merged_df.pop('Comp name'))
+    preprocessed_events_merged_df.insert(1, 'Comp name', preprocessed_events_merged_df.pop('Comp name'))
     results_pts_merged_df.insert(1, 'Comp name', results_pts_merged_df.pop('Comp name'))
     results_details_merged_df.insert(1, 'Comp name', results_details_merged_df.pop('Comp name'))
 
     # Save dfs
     events_merged_df.to_csv(os.path.join(dst, 'event_info.csv'), sep=';', index=False)
+    preprocessed_events_merged_df.to_csv(os.path.join(dst, 'preprocessed_event_info.csv'), sep=';', index=False)
     results_pts_merged_df.to_csv(os.path.join(dst, 'results_pts.csv'), sep=';', index=False)
     results_details_merged_df.to_csv(os.path.join(dst, 'results_details.csv'), sep=';', index=False)
 
@@ -530,7 +552,7 @@ def filter_str(s, word_list, exclude=False):
 
 
 def get_weights(txt):
-    txt_cleaned = txt.replace(',', '').replace('+', '')
+    txt_cleaned = txt.replace(',', '').replace('+', '').replace('-', ' ')
     words = txt_cleaned.split(' ')
     weight_key_words = ['kg', 'to']
     return [float(words[i - 1]) for i in range(1, len(words)) if words[i] in weight_key_words and is_float(words[i - 1])]
@@ -571,21 +593,27 @@ def to_float(s):
 
 # parse_competition('2017 Arnold South America', 'https://strongmanarchives.com/viewContest.php?id=267', 'arnold_classifiers', is_wsm=False)
 
-# parse_all_competitions(EUROPE_STRONGEST_MAN_URL, 'europe_strongest_man', is_wsm=False)
+# parse_all_competitions(ARNOLD_CLASSIC_URL, 'europe_strongest_man', is_wsm=False)
+# parse_all_competitions(ARNOLD_CLASSIC_URL, 'arnold_classic', is_wsm=False)
+# parse_all_competitions(WSM_URL, 'world_strongest_man', is_wsm=True)
+# parse_all_competitions(ROGUE_INVITATIONAL_URL, 'rogue_invitational', is_wsm=False)
+# parse_all_competitions(GIANTS_URL, 'giants', is_wsm=False)
 
 
 # events_path = 'data/data_raw/rogue/events/2021 Rogue Invitational.csv'
-events_path = 'data/data_raw/wsm/events/finals/2021 WSM Final.csv'
+events_path = 'data/data_raw/world_strongest_man/events/finals/2021 WSM Final.csv'
 # events_path = 'data/data_raw/arnold_classic/events/2020 Arnold Strongman Classic.csv'
 results_path = events_path.replace('events', 'results')
+
 
 events_df = pd.read_csv(events_path, sep=',')
 results_df = pd.read_csv(results_path, sep=',')
 preprocess_event_info(results_df, events_df)
 
+
+
+merge_data('data/data_raw', 'data/data_raw_merged')
+
 # preprocess_csvs('data/data_raw', 'data/data_preprocessed')
-
-# merge_data('data/data_raw', 'data/data_raw_merged')
-
 
 # Get 2 units from 1 result
