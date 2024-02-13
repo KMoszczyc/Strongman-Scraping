@@ -9,6 +9,7 @@ import time
 from requests_html import HTMLSession
 import re
 from collections import Counter
+import math
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -291,6 +292,7 @@ def preprocess_results(all_event_names, event_results_df, event_points_df, event
         # Sort results by points
         zipped_results = sorted(list(zip(points, results)), reverse=True, key=lambda x: x[0])
         sorted_result_points, sorted_results = [list(t) for t in zip(*zipped_results)]
+        print(event_name, 'sorted_results:', sorted_results)
         cleaned_results = [remove_text_inside_braces(txt).replace('~', '').strip().lower() for txt in sorted_results]
 
         # Main measurement unity
@@ -324,6 +326,7 @@ def preprocess_results(all_event_names, event_results_df, event_points_df, event
 
     return preprocessed_event_info
 
+
 def extract_results(results, units, preprocessed_event_info):
     if ' in ' not in results[0]:
         return clean_results(results), units
@@ -346,14 +349,16 @@ def extract_results(results, units, preprocessed_event_info):
 
     # Update units for unfinished events
     if unfinished_results:
-        preprocessed_event_info['second_measurement_unit'] = 'reps' if preprocessed_event_info['second_measurement_unit'] == '' else preprocessed_event_info['second_measurement_unit']
+        preprocessed_event_info['second_measurement_unit'] = 'reps' if preprocessed_event_info['second_measurement_unit'] == '' else preprocessed_event_info[
+            'second_measurement_unit']
         num_of_finished_results = len(finished_result_lifts)
-        units = units[:num_of_finished_results] + [preprocessed_event_info['second_measurement_unit']]*(len(units)-num_of_finished_results)
+        units = units[:num_of_finished_results] + [preprocessed_event_info['second_measurement_unit']] * (len(units) - num_of_finished_results)
 
     final_results = clean_results(finished_result_measurements + unfinished_results)
-    print(finished_result_lifts, unfinished_results , final_results, units)
+    print(finished_result_lifts, unfinished_results, final_results, units)
 
     return final_results, units
+
 
 # TODO: it doesnt work!
 def remap_list(values_list, points_list):
@@ -365,14 +370,20 @@ def remap_list(values_list, points_list):
     print(index_list, remaped_list)
 
     return remaped_list
+
+
 def arg_sort(seq):
-    return sorted(range(len(seq)), key=seq.__getitem__, reverse=True,)
+    return sorted(range(len(seq)), key=seq.__getitem__, reverse=True, )
+
 
 def clean_result(result):
     numbers = get_floats(str(result))
     return numbers[0] if numbers else 0
+
+
 def clean_results(results):
     return [clean_result(result) for result in results]
+
 
 def split_results(results_df):
     """Split results df into event_results and event_points"""
@@ -428,7 +439,6 @@ def get_implements(split_str, info):
 
 
 def handle_weight_info(info, info_dict):
-
     weights = get_weights(info)
     # print(info, info_dict, weights)
     info_dict['min_weight'] = min(weights)
@@ -468,23 +478,26 @@ def preprocess_csvs(src, dst):
 
     # preprocess_event_info([], a)
 
+
 def read_data(events_path, results_path):
     events_df = pd.read_csv(events_path, sep=',')
     results_df = pd.read_csv(results_path, sep=',')
-    preprocessed_events_df = preprocess_event_info(results_df, events_df)
 
     year = get_ints(results_path)[0]
     results_df['Year'] = year
     events_df['Year'] = year
-    preprocessed_events_df['Year'] = year
     events_df['Event'] = events_df['Event'].str.strip()
 
     comp_name = remove_numbers(os.path.splitext(os.path.basename(events_path))[0])
     events_df['Comp name'] = comp_name
     results_df['Comp name'] = comp_name
+
+    preprocessed_events_df = preprocess_event_info(results_df, events_df)
+    preprocessed_events_df['Year'] = year
     preprocessed_events_df['Comp name'] = comp_name
 
     return events_df, preprocessed_events_df, results_df
+
 
 def merge_data(src, dst):
     event_info_dfs = []
@@ -560,24 +573,36 @@ def get_weights(txt):
 
 def get_floats(txt):
     return [float(x) for x in txt.split(' ') if is_float(x)]
+
+
 def get_ints(txt):
     return [int(x) for x in re.findall("\d+", txt)]
+
 
 def remove_numbers(txt):
     return re.sub(r'[0-9]+', '', txt).strip()
 
 
 def remove_punctuation(txt):
+    if is_nan(txt):
+        return ''
     return re.sub(r'[^\w\s]', '', txt)
 
 
 def remove_braces(txt):
+    if is_nan(txt):
+        return ''
     return re.sub("[(\[].*?[)\]]", "", txt)
 
 
 def remove_text_inside_braces(txt):
+    if is_nan(txt):
+        return ''
     return re.sub("[\(\[].*?[\)\]]", "", txt)
 
+
+def is_nan(x):
+    return x != x
 
 def is_float(num):
     try:
@@ -605,12 +630,9 @@ events_path = 'data/data_raw/world_strongest_man/events/finals/2021 WSM Final.cs
 # events_path = 'data/data_raw/arnold_classic/events/2020 Arnold Strongman Classic.csv'
 results_path = events_path.replace('events', 'results')
 
-
 events_df = pd.read_csv(events_path, sep=',')
 results_df = pd.read_csv(results_path, sep=',')
 preprocess_event_info(results_df, events_df)
-
-
 
 merge_data('data/data_raw', 'data/data_raw_merged')
 
