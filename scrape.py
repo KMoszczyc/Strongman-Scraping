@@ -190,6 +190,7 @@ def preprocess_event_info(results_df, event_info_df):
         'deadlift': '',
         'attempts': '',
         'max_lifts': '',
+        'lifts_num': '',
         'implements_num': '',
         'implements': '',
     }
@@ -332,7 +333,7 @@ def extract_results(results, units, preprocessed_event_info):
         return clean_results(results), units
 
     result_lifts, result_measurements = zip(*(result.split(' in ') for result in results if ' in ' in result))
-    result_measurements = [float(measurement.split(' ')[0]) for measurement in result_measurements]
+    result_measurements = [to_float(measurement.split(' ')[0]) for measurement in result_measurements]
     result_lifts = [int(lift) for lift in result_lifts]
     num_of_results_with_in = len(result_lifts)
 
@@ -344,6 +345,7 @@ def extract_results(results, units, preprocessed_event_info):
     # Finished event results
     finished_result_lifts = [lift for lift in result_lifts if lift == preprocessed_event_info['max_lifts']]
     finished_result_measurements = result_measurements[:len(finished_result_lifts)]
+
     # Unfinished event results
     unfinished_results = result_lifts[len(finished_result_lifts):] + results[num_of_results_with_in:]
 
@@ -351,6 +353,11 @@ def extract_results(results, units, preprocessed_event_info):
     if unfinished_results:
         preprocessed_event_info['second_measurement_unit'] = 'reps' if preprocessed_event_info['second_measurement_unit'] == '' else preprocessed_event_info[
             'second_measurement_unit']
+        # If main measurement unit is empty replace it with the second measurement unit
+        if is_nan(preprocessed_event_info['main_measurement_unit']):
+            preprocessed_event_info['main_measurement_unit'] = preprocessed_event_info['second_measurement_unit']
+            preprocessed_event_info['second_measurement_unit'] = math.nan
+
         num_of_finished_results = len(finished_result_lifts)
         units = units[:num_of_finished_results] + [preprocessed_event_info['second_measurement_unit']] * (len(units) - num_of_finished_results)
 
@@ -455,7 +462,8 @@ def get_float_before_word(s, word):
 
 def get_int_before_word(s, word):
     """First split by the word and then get the first word before the word that we split on. [-2] is there because split() adds an empty string at the end"""
-    return int(s.split(word)[0].split(' ')[-2].strip())
+    num = s.split(word)[0].split(' ')[-2].strip()
+    return to_int(num, default=math.nan)
 
 
 def preprocess_csvs(src, dst):
@@ -482,18 +490,17 @@ def preprocess_csvs(src, dst):
 def read_data(events_path, results_path):
     events_df = pd.read_csv(events_path, sep=',')
     results_df = pd.read_csv(results_path, sep=',')
+    preprocessed_events_df = preprocess_event_info(results_df, events_df)
 
     year = get_ints(results_path)[0]
     results_df['Year'] = year
     events_df['Year'] = year
+    preprocessed_events_df['Year'] = year
     events_df['Event'] = events_df['Event'].str.strip()
 
     comp_name = remove_numbers(os.path.splitext(os.path.basename(events_path))[0])
     events_df['Comp name'] = comp_name
     results_df['Comp name'] = comp_name
-
-    preprocessed_events_df = preprocess_event_info(results_df, events_df)
-    preprocessed_events_df['Year'] = year
     preprocessed_events_df['Comp name'] = comp_name
 
     return events_df, preprocessed_events_df, results_df
@@ -611,9 +618,21 @@ def is_float(num):
     except ValueError:
         return False
 
+def is_int(num):
+    try:
+        int(num)
+        return True
+    except ValueError:
+        return False
 
-def to_float(s):
-    return float(s) if is_float(s) else ''
+def to_int(s, default=''):
+    """Convert string to int safely."""
+    return float(s) if is_int(s) else default
+
+def to_float(s, default=''):
+    """Convert string to float safely."""
+
+    return float(s) if is_float(s) else default
 
 
 # parse_competition('2017 Arnold South America', 'https://strongmanarchives.com/viewContest.php?id=267', 'arnold_classifiers', is_wsm=False)
