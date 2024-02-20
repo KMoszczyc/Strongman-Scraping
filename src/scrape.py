@@ -10,6 +10,7 @@ from requests_html import HTMLSession
 import re
 from collections import Counter
 import math
+import utils
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -27,7 +28,7 @@ ULTIMATE_STRONGMAN_URL = 'https://strongmanarchives.com/contests.php?type=30'
 EUROPE_STRONGEST_MAN_URL = 'https://strongmanarchives.com/contests.php?type=9'
 FORCA_BRUTA_URL = 'https://strongmanarchives.com/contests.php?type=10'
 ROGUE_INVITATIONAL_URL = 'https://strongmanarchives.com/contests.php?type=68'
-DATA_DIR = 'data/'
+DATA_DIR = '../data/'
 
 
 def load_page(url):
@@ -314,21 +315,25 @@ def preprocess_results(all_event_names, event_results_df, event_points_df, event
         sorted_result_values_df[event_name] = final_results
 
         print(unsorted_result_points_df[event_name].tolist())
-        unsorted_result_values_df[event_name] = remap_list(final_results, unsorted_result_points_df[event_name].tolist())
+        unsorted_result_values_df[event_name] = utils.remap_list(final_results, unsorted_result_points_df[event_name].tolist())
 
-    # print('----------------------Unsorted---------------------')
-    # print(unsorted_result_points_df)
-    # print(unsorted_result_values_df)
-    #
-    # print('----------------------Sorted---------------------')
-    # print(sorted_result_points_df)
-    # print(sorted_result_units_df)
-    # print(sorted_result_values_df)
+    print('----------------------Unsorted---------------------')
+    print(unsorted_result_points_df)
+    print(unsorted_result_values_df)
+
+    print('----------------------Sorted---------------------')
+    print(sorted_result_points_df)
+    print(sorted_result_units_df)
+    print(sorted_result_values_df)
 
     return preprocessed_event_info
 
 
 def extract_results(results, units, preprocessed_event_info):
+    """Extract result values from the scraped tables.
+        Formats:
+        - <value> <unit>, f.e: 15.3 m, 12.1 s
+        - <value> reps in <unit>, f.e: 5 reps in 25.3 s"""
     if ' in ' not in results[0]:
         return clean_results(results), units
 
@@ -365,22 +370,6 @@ def extract_results(results, units, preprocessed_event_info):
     print(finished_result_lifts, unfinished_results, final_results, units)
 
     return final_results, units
-
-
-# TODO: it doesnt work!
-def remap_list(values_list, points_list):
-    """Use index_list to reorder values list"""
-    index_list = arg_sort(points_list)
-    remaped_list = [values_list[index] for index in index_list]
-    print('-----------------------')
-    print(values_list, points_list)
-    print(index_list, remaped_list)
-
-    return remaped_list
-
-
-def arg_sort(seq):
-    return sorted(range(len(seq)), key=seq.__getitem__, reverse=True, )
 
 
 def clean_result(result):
@@ -645,7 +634,9 @@ def to_float(s, default=''):
 
 
 # events_path = 'data/data_raw/rogue/events/2021 Rogue Invitational.csv'
-events_path = 'data/data_raw/world_strongest_man/events/finals/2021 WSM Final.csv'
+# events_path = '../data/data_raw/world_strongest_man/events/finals/2021 WSM Final.csv'
+events_path = '../data/data_raw/world_strongest_man/events/groups/2017 WSM Final - group 1.csv'
+
 # events_path = 'data/data_raw/arnold_classic/events/2020 Arnold Strongman Classic.csv'
 results_path = events_path.replace('events', 'results')
 
@@ -653,7 +644,7 @@ events_df = pd.read_csv(events_path, sep=',')
 results_df = pd.read_csv(results_path, sep=',')
 preprocess_event_info(results_df, events_df)
 
-merge_data('data/data_raw', 'data/data_raw_merged')
+# merge_data('../data/data_raw', 'data/data_raw_merged')
 
 # preprocess_csvs('data/data_raw', 'data/data_preprocessed')
 
