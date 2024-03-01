@@ -178,7 +178,7 @@ def create_dir(path):
         os.makedirs(path)
 
 
-def preprocess_event_info(results_df, event_info_df):
+def transform_csv(results_path, events_path):
     info_schema = {
         'event_name': '',
         'distance': '',
@@ -196,11 +196,33 @@ def preprocess_event_info(results_df, event_info_df):
         'implements': '',
     }
 
+    event_info_df = pd.read_csv(events_path, sep=',')
+    results_df = pd.read_csv(results_path, sep=',')
+
     print(results_df)
     print(event_info_df)
 
-    event_results_df, event_points_df = split_results(results_df)
+    raw_event_results_df, raw_event_points_df, competitors = split_results(results_df)
 
+    transformed_event_info, transformed_event_info_df = transform_event_info(raw_event_results_df, event_info_df, info_schema)
+    transformed_result_points_df, transformed_result_units_df, transformed_result_values_df = transform_results(raw_event_results_df, raw_event_points_df,
+                                                                                                                transformed_event_info, competitors)
+
+    transformed_event_info_df = prepapre_df_for_merging(transformed_event_info_df, events_path, results_path)
+    transformed_result_points_df = prepapre_df_for_merging(transformed_result_points_df, events_path, results_path)
+    transformed_result_units_df = prepapre_df_for_merging(transformed_result_units_df, events_path, results_path)
+    transformed_result_values_df = prepapre_df_for_merging(transformed_result_values_df, events_path, results_path)
+
+    print('----------------------Final---------------------')
+    print(transformed_result_points_df)
+    print(transformed_result_units_df)
+    print(transformed_result_values_df)
+    print(transformed_event_info_df)
+
+    return transformed_result_points_df, transformed_result_units_df, transformed_result_values_df, transformed_event_info_df
+
+
+def transform_event_info(event_results_df, event_info_df, info_schema):
     # Preprocess event info
     event_info_df['Event'] = event_info_df['Event'].str.strip()
     event_info_df['Info'] = event_info_df['Info'].str.strip()
@@ -210,7 +232,7 @@ def preprocess_event_info(results_df, event_info_df):
     event_info_df = event_info_df.set_index('Event', drop=False)
     event_info_df = event_info_df.loc[events_ordered]
 
-    preprocessed_event_info = []
+    transformed_event_info = []
     for i, row in event_info_df.iterrows():
         event_name = row['Event'].strip()
         info_dict = info_schema.copy()
@@ -254,7 +276,7 @@ def preprocess_event_info(results_df, event_info_df):
                 if info_dict['implements_num'] == '' and implements_num != '':
                     info_dict['implements_num'] = implements_num
                 info_dict['max_lifts'] = lifts_num if info_dict['max_lifts'] == '' else lifts_num * info_dict['max_lifts']
-        preprocessed_event_info.append(info_dict)
+        transformed_event_info.append(info_dict)
 
     # Add missing events, that are not in event_info csv
     all_event_names = list(event_results_df.columns)
@@ -263,28 +285,25 @@ def preprocess_event_info(results_df, event_info_df):
     for event_name, i in missing_events:
         info_dict = info_schema.copy()
         info_dict['event_name'] = event_name
-        preprocessed_event_info.insert(i, info_dict)
+        transformed_event_info.insert(i, info_dict)
 
-    preprocessed_event_info = preprocess_results(all_event_names, event_results_df, event_points_df, event_info_df, preprocessed_event_info)
-    preprocessed_event_info_df = pd.DataFrame(preprocessed_event_info)
-    print(preprocessed_event_info_df)
-
-    return preprocessed_event_info_df
+    transformed_event_info_df = pd.DataFrame(transformed_event_info)
+    return transformed_event_info, transformed_event_info_df
 
 
-def preprocess_results(all_event_names, event_results_df, event_points_df, event_info_df, preprocessed_event_info):
+def transform_results(event_results_df, event_points_df, transformed_event_info, competitors):
     """Get the main and second measurement unit. Main measurement unit is assumed to be the same as the best event result.
     Second measurement unit is the most common one, that's not main unit. """
-    existing_units = ['m', 's', 'kg', 'point', 'points', 'rep', 'reps', 'stair', 'stairs']
-    existing_units_in_singular_form = ['rep', 'point', 'stair']
 
+    cols = ['competitor'] + list(event_results_df.columns)
     unsorted_result_points_df = event_points_df.copy()
-    unsorted_result_values_df = pd.DataFrame(columns=all_event_names)
-    unsorted_result_units_df = pd.DataFrame(columns=all_event_names)
 
-    sorted_result_values_df = pd.DataFrame(columns=all_event_names)
-    sorted_result_units_df = pd.DataFrame(columns=all_event_names)
-    sorted_result_points_df = pd.DataFrame(columns=all_event_names)
+    final_result_values_df = pd.DataFrame(columns=cols)
+    final_result_units_df = pd.DataFrame(columns=cols)
+    final_result_points_df = pd.DataFrame(columns=cols)
+    final_result_values_df['competitor'] = competitors
+    final_result_units_df['competitor'] = competitors
+    final_result_points_df['competitor'] = competitors
 
     for i, event_name in enumerate(event_results_df):
         event_name = event_name.strip()
@@ -295,38 +314,42 @@ def preprocess_results(all_event_names, event_results_df, event_points_df, event
         zipped_results = sorted(list(zip(points, results)), reverse=True, key=lambda x: x[0])
         sorted_result_points, sorted_results = [list(t) for t in zip(*zipped_results)]
         print(event_name, 'sorted_results:', sorted_results)
-        cleaned_results = [remove_text_inside_braces(txt).replace('~', '').strip().lower() for txt in sorted_results]
+        cleaned_sorted_results = [remove_text_inside_braces(txt).replace('~', '').strip().lower() for txt in sorted_results]
+        cleaned_unsorted_results = [remove_text_inside_braces(txt).replace('~', '').strip().lower() for txt in results]
 
-        # Main measurement unity
-        units_raw = [filter_str(txt, existing_units) for txt in cleaned_results]
-        units = [unit + 's' if unit in existing_units_in_singular_form else unit for unit in units_raw]
-        preprocessed_event_info[i]['main_measurement_unit'] = units[0]
+        # Main measurement unit
+        sorted_units = extract_units_from_results(cleaned_sorted_results)
+        unsorted_units = extract_units_from_results(cleaned_unsorted_results)
+        transformed_event_info[i]['main_measurement_unit'] = sorted_units[0]
 
         # Second measurement unit
-        filtered_units = [unit for unit in units if unit != units[0]]
+        filtered_units = [unit for unit in sorted_units if unit != sorted_units[0]]
         if non_main_units_count := Counter(filtered_units).most_common():
-            preprocessed_event_info[i]['second_measurement_unit'] = non_main_units_count[0][0]
+            transformed_event_info[i]['second_measurement_unit'] = non_main_units_count[0][0]
 
-        final_results, units = extract_results(cleaned_results, units, preprocessed_event_info[i])
+        final_results, unsorted_units = extract_results(cleaned_unsorted_results, unsorted_units, transformed_event_info[i])
 
-        # Extract results
-        sorted_result_points_df[event_name] = sorted_result_points
-        sorted_result_units_df[event_name] = units
-        sorted_result_values_df[event_name] = final_results
+        # Update event results
+        final_result_points_df[event_name] = points
+        final_result_units_df[event_name] = unsorted_units
+        final_result_values_df[event_name] = final_results
 
         print(unsorted_result_points_df[event_name].tolist())
-        unsorted_result_values_df[event_name] = utils.remap_list(final_results, unsorted_result_points_df[event_name].tolist())
 
-    print('----------------------Unsorted---------------------')
-    print(unsorted_result_points_df)
-    print(unsorted_result_values_df)
+    final_result_points_df = prepapre_df_for_merging(final_result_points_df, events_path, results_path)
+    final_result_units_df = prepapre_df_for_merging(final_result_units_df, events_path, results_path)
+    final_result_values_df = prepapre_df_for_merging(final_result_values_df, events_path, results_path)
 
-    print('----------------------Sorted---------------------')
-    print(sorted_result_points_df)
-    print(sorted_result_units_df)
-    print(sorted_result_values_df)
+    return final_result_points_df, final_result_units_df, final_result_values_df
 
-    return preprocessed_event_info
+
+def extract_units_from_results(results: list):
+    existing_units = ['m', 's', 'kg', 'point', 'points', 'rep', 'reps', 'stair', 'stairs']
+    existing_units_in_singular_form = ['rep', 'point', 'stair']
+
+    units_raw = [filter_str(txt, existing_units) for txt in results]
+    units = [unit + 's' if unit in existing_units_in_singular_form else unit for unit in units_raw]
+    return units
 
 
 def extract_results(results, units, preprocessed_event_info):
@@ -397,7 +420,7 @@ def split_results(results_df):
     event_points_df = event_points_df[cols_reordered]
     event_points_df.columns = event_result_cols + [event_points_df.columns[-1]]
 
-    return event_results_df, event_points_df
+    return event_results_df, event_points_df, results_df['Competitor']
 
 
 def get_implement_and_lifts_num(event_info):
@@ -464,13 +487,10 @@ def preprocess_csvs(src, dst):
             continue
 
         for name in files:
-            events_path = os.path.join(root, name)
-            results_path = events_path.replace('events', 'results')
+            raw_events_path = os.path.join(root, name)
+            raw_results_path = events_path.replace('events', 'results')
 
-            events_df = pd.read_csv(events_path, sep=',')
-            results_df = pd.read_csv(results_path, sep=',')
-
-            processed_event_df = preprocess_event_info(results_df, events_df)
+            final_result_points_df, final_result_units_df, final_result_values_df, final_event_info_df = transform_csv(raw_results_path, raw_events_path)
             print('file:', events_df, results_df)
 
     # preprocess_event_info([], a)
@@ -479,23 +499,31 @@ def preprocess_csvs(src, dst):
 def read_data(events_path, results_path):
     events_df = pd.read_csv(events_path, sep=',')
     results_df = pd.read_csv(results_path, sep=',')
-    preprocessed_events_df = preprocess_event_info(results_df, events_df)
 
-    year = get_ints(results_path)[0]
-    results_df['Year'] = year
-    events_df['Year'] = year
-    preprocessed_events_df['Year'] = year
+    events_df = prepapre_df_for_merging(events_df, events_path, results_path)
+    results_df = prepapre_df_for_merging(results_df, events_path, results_path)
     events_df['Event'] = events_df['Event'].str.strip()
 
-    comp_name = remove_numbers(os.path.splitext(os.path.basename(events_path))[0])
-    events_df['Comp name'] = comp_name
-    results_df['Comp name'] = comp_name
-    preprocessed_events_df['Comp name'] = comp_name
+    return events_df, results_df
 
-    return events_df, preprocessed_events_df, results_df
+
+def prepapre_df_for_merging(df, events_path, results_path):
+    """In ordered to merge data, whether it's points, units, values or event info"""
+
+    old_cols = list(df.columns)
+    year = get_ints(results_path)[0]
+    comp_name = remove_numbers(os.path.splitext(os.path.basename(events_path))[0])
+
+    df['year'] = year
+    df['competition_name'] = comp_name
+    new_cols_order = ['year', 'competition_name'] + old_cols
+    df = df[new_cols_order]
+
+    return df
 
 
 def merge_data(src, dst):
+    """TODO: Fix merge with processed data or do it in preprocess csvs??"""
     event_info_dfs = []
     processed_event_info_dfs = []
     results_pts_dfs = []
@@ -504,6 +532,8 @@ def merge_data(src, dst):
     # dir_path = os.path.join(dst, root.lstrip(src).replace('events', '').strip('\\'))
     create_dir(dst)
 
+    default_cols = ['Year', 'Comp name', '#', 'Competitor', 'Country']
+
     for root, dirs, files in os.walk(src):
         if 'results' in root:
             continue
@@ -511,11 +541,9 @@ def merge_data(src, dst):
         for name in files:
             events_path = os.path.join(root, name)
             results_path = events_path.replace('events', 'results')
-
-            events_df, preprocessed_events_df, results_df = read_data(events_path, results_path)
+            final_result_points_df, final_result_units_df, final_result_values_df, final_event_info_df = transform_csv(results_path, events_path)
 
             pts_cols = [col.strip() for col in results_df.columns if 'pts' in col.lower()]
-            default_cols = ['Year', 'Comp name', '#', 'Competitor', 'Country']
             not_pts_cols = [col.strip() for col in results_df.columns if col not in pts_cols]
 
             # print(pts_cols, not_pts_cols)
@@ -523,7 +551,7 @@ def merge_data(src, dst):
             results_details_df = results_df[not_pts_cols]
 
             event_info_dfs.append(events_df)
-            processed_event_info_dfs.append(preprocessed_events_df)
+            processed_event_info_dfs.append(final_event_info_df)
             results_pts_dfs.append(results_pts_df)
             results_details_dfs.append(results_details_df)
 
@@ -600,12 +628,14 @@ def remove_text_inside_braces(txt):
 def is_nan(x):
     return x != x
 
+
 def is_float(num):
     try:
         float(num)
         return True
     except ValueError:
         return False
+
 
 def is_int(num):
     try:
@@ -614,9 +644,11 @@ def is_int(num):
     except ValueError:
         return False
 
+
 def to_int(s, default=''):
     """Convert string to int safely."""
     return float(s) if is_int(s) else default
+
 
 def to_float(s, default=''):
     """Convert string to float safely."""
@@ -633,16 +665,14 @@ def to_float(s, default=''):
 # parse_all_competitions(GIANTS_URL, 'giants', is_wsm=False)
 
 
-# events_path = 'data/data_raw/rogue/events/2021 Rogue Invitational.csv'
+events_path = '../data/data_raw/rogue/events/2021 Rogue Invitational.csv'
 # events_path = '../data/data_raw/world_strongest_man/events/finals/2021 WSM Final.csv'
-events_path = '../data/data_raw/world_strongest_man/events/groups/2017 WSM Final - group 1.csv'
+# events_path = '../data/data_raw/world_strongest_man/events/groups/2017 WSM Final - group 1.csv'
 
-# events_path = 'data/data_raw/arnold_classic/events/2020 Arnold Strongman Classic.csv'
+# events_path = '../data/data_raw/arnold_classic/events/2020 Arnold Strongman Classic.csv'
 results_path = events_path.replace('events', 'results')
 
-events_df = pd.read_csv(events_path, sep=',')
-results_df = pd.read_csv(results_path, sep=',')
-preprocess_event_info(results_df, events_df)
+transform_csv(results_path, events_path)
 
 # merge_data('../data/data_raw', 'data/data_raw_merged')
 
