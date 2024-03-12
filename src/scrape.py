@@ -86,7 +86,7 @@ def load_page_v2(url):
 def decode_html(html):
     """Repair special characters, some like: Á and á are replaced with A and a"""
     # return html.replace("\u00C3\uFFFD", "A").replace("\u00E1\uFFFD", 'a').replace("\uFFFD", '?').encode('windows-1252').decode('utf-8')
-    return fix_encoding(html)
+    return fix_encoding(html).replace("�", "Á")
 
 def parse_competition(competition_name, url, dir_name, is_wsm, force_update=False):
     """Parse and save a single competition (results + event data) to CSV"""
@@ -721,9 +721,10 @@ s4="I. Árvai"
 s3="M. Ver MagnÃºsson"
 s5="Ã�rvai"
 
-print(s3)
+print(s5)
 # print(s3.encode('windows-1252').decode('utf-8'))
 print(fix_encoding(s5))
+print(fix_encoding(s5).replace("�", "Á"))
 
 
 # parse_competition("2004 Arnold's Strongest Man", ARNOLD_CLASSIC_URL, 'arnold_classic', is_wsm=False, force_update=True)
