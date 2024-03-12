@@ -19,6 +19,3 @@ def remap_list(values_list, points_list):
     print(values_points_dict, remapped_values)
 
     return remapped_values
-
-
-

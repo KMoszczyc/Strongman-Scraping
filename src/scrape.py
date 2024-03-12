@@ -7,10 +7,13 @@ from webdriver_manager.chrome import ChromeDriverManager
 import os
 import time
 from requests_html import HTMLSession
+import html
 import re
 from collections import Counter
 import math
 import utils
+from pathlib import Path
+from ftfy import fix_encoding
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -28,8 +31,12 @@ ULTIMATE_STRONGMAN_URL = 'https://strongmanarchives.com/contests.php?type=30'
 EUROPE_STRONGEST_MAN_URL = 'https://strongmanarchives.com/contests.php?type=9'
 FORCA_BRUTA_URL = 'https://strongmanarchives.com/contests.php?type=10'
 ROGUE_INVITATIONAL_URL = 'https://strongmanarchives.com/contests.php?type=68'
-DATA_DIR = '../data/'
 
+ROOT_PATH = str(Path(os.path.abspath('')).parents[0])
+DATA_RAW_DIR_PATH = os.path.join(ROOT_PATH, 'data/data_raw')
+DATA_TRANSFORMED_DIR_PATH = os.path.join(ROOT_PATH, 'data/data_transformed')
+
+print(DATA_RAW_DIR_PATH)
 
 def load_page(url):
     # driver = webdriver.Chrome(ChromeDriverManager().install())
@@ -64,23 +71,36 @@ def load_competitions_page_selenium(url):
 
 
 def load_page_v2(url):
-    """Load competition page with results and event data, but without Selenium becouse it's slow."""
+    """Load competition page with results and event data, but without Selenium because it's slow."""
 
     session = HTMLSession()
     response = session.get(url)
     response.html.render(timeout=10, sleep=0.5)
+    # print(response)
+    decoded_html = decode_html(response.html.html)
+    # print(decoded_html)
+    soup = BeautifulSoup(decoded_html, 'html.parser')
 
-    return BeautifulSoup(response.html.html, 'html.parser')
+    return soup
 
+def decode_html(html):
+    """Repair special characters, some like: Á and á are replaced with A and a"""
+    # return html.replace("\u00C3\uFFFD", "A").replace("\u00E1\uFFFD", 'a').replace("\uFFFD", '?').encode('windows-1252').decode('utf-8')
+    return fix_encoding(html)
 
-def parse_competition(competition_name, url, dir_name, is_wsm):
+def parse_competition(competition_name, url, dir_name, is_wsm, force_update=False):
     """Parse and save a single competition (results + event data) to CSV"""
 
     page = load_page_v2(url)
 
     # Set paths
-    results_data_dir_path = f'{DATA_DIR}/{dir_name}/results'
-    event_data_dir_path = f'{DATA_DIR}/{dir_name}/events'
+    results_data_dir_path = f'{DATA_RAW_DIR_PATH}/{dir_name}/results'
+    event_data_dir_path = f'{DATA_RAW_DIR_PATH}/{dir_name}/events'
+
+    # Stop scraping if competition file is already downloaded and force_update flag is turned off.
+    if (file_exists(results_data_dir_path, competition_name, is_wsm) and file_exists(event_data_dir_path, competition_name, is_wsm)) and not force_update:
+        print('Scraping stopped! Competition file of:', competition_name, ' is already downloaded.')
+        return
 
     # Parse with BS4
     results_data = parse_competition_results_data(page)
@@ -90,6 +110,7 @@ def parse_competition(competition_name, url, dir_name, is_wsm):
     save_to_csv(results_data, results_data_dir_path, competition_name, is_wsm)
     save_to_csv(events_data, event_data_dir_path, competition_name, is_wsm)
 
+    print('Scraped:', competition_name)
 
 def parse_competition_results_data(page):
     """Parse results table to Pandas Dataframe with BS4"""
@@ -97,6 +118,8 @@ def parse_competition_results_data(page):
     tables = page.find_all('table', {
         'class': 'tablesorter tablesorter-blue tablesorter6bcc7b9997f32 hasFilters dataTable no-footer'})
 
+    # print(page)
+    # print(tables)
     competition_data_dfs = []
     for table_id, table in enumerate(tables):
         headers = [th.text.strip() for th in table.find_all('th')]
@@ -109,7 +132,7 @@ def parse_competition_results_data(page):
                 row = [td.text.strip() for td in row_data]
                 df.loc[len(df)] = row
 
-            print(f'group {table_id}:', df)
+            # print(f'group {table_id}:', df)
             competition_data_dfs.append(df)
 
     return competition_data_dfs
@@ -128,7 +151,6 @@ def parse_competition_events_data(page):
             df = pd.DataFrame(columns=['Event', 'Info'], data=data)
             event_data_dfs.append(df)
 
-    print(event_data_dfs)
     return event_data_dfs
 
 
@@ -151,14 +173,20 @@ def save_to_csv(data_dfs, dir_path, competition_name, is_wsm):
     for table_id, table_df in enumerate(data_dfs):
         if is_wsm:
             if table_id == 0:
-                table_df.to_csv(f'{dir_path}/finals/{competition_name}.csv', index=False)
+                table_df.to_csv(f'{dir_path}/finals/{competition_name}.csv', index=False, encoding='utf-8-sig')
             else:
-                table_df.to_csv(f'{dir_path}/groups/{competition_name} - group {table_id}.csv', index=False)
+                table_df.to_csv(f'{dir_path}/groups/{competition_name} - group {table_id}.csv', index=False, encoding='utf-8-sig')
         else:
             table_df.to_csv(f'{dir_path}/{competition_name}.csv', index=False)
 
+def file_exists(dir_path, competition_name, is_wsm):
+    path = f'{dir_path}/{competition_name}.csv'
+    if is_wsm:
+        path = f'{dir_path}/finals/{competition_name}.csv'
 
-def parse_all_competitions(url, dir_name, is_wsm):
+    return os.path.isfile(path)
+
+def parse_all_competitions(url, dir_name, is_wsm, force_update=False):
     """Parse all competitions from a specified comp type ex. WSM, Arnold Classic etc."""
 
     page = load_competitions_page_selenium(url)
@@ -170,7 +198,7 @@ def parse_all_competitions(url, dir_name, is_wsm):
         competition_name = row_data[1].text.strip()
         current_url = BASE_URL + [raw_row.find_all('a', href=True)][0][0]['href']
 
-        parse_competition(competition_name, current_url, dir_name, is_wsm)
+        parse_competition(competition_name, current_url, dir_name, is_wsm, force_update)
 
 
 def create_dir(path):
@@ -199,8 +227,8 @@ def transform_csv(results_path, events_path):
     event_info_df = pd.read_csv(events_path, sep=',')
     results_df = pd.read_csv(results_path, sep=',')
 
-    print(results_df)
-    print(event_info_df)
+    # print(results_df)
+    # print(event_info_df)
 
     raw_event_results_df, raw_event_points_df, competitors = split_results(results_df)
 
@@ -214,12 +242,12 @@ def transform_csv(results_path, events_path):
     transformed_event_info_df = prepapre_df_for_merging(transformed_event_info_df, events_path, results_path)
     transformed_raw_results_df = prepapre_df_for_merging(raw_event_results_df, events_path, results_path)
 
-    print('----------------------Final---------------------')
-    print(transformed_result_points_df)
-    print(transformed_result_units_df)
-    print(transformed_result_values_df)
-    print(transformed_event_info_df)
-    print(transformed_raw_results_df)
+    # print('----------------------Final---------------------')
+    # print(transformed_result_points_df)
+    # print(transformed_result_units_df)
+    # print(transformed_result_values_df)
+    # print(transformed_event_info_df)
+    # print(transformed_raw_results_df)
 
     return transformed_result_points_df, transformed_result_units_df, transformed_result_values_df, transformed_event_info_df, transformed_raw_results_df
 
@@ -687,13 +715,28 @@ def to_float(s, default=''):
     return float(s) if is_float(s) else default
 
 
-# parse_competition('2017 Arnold South America', 'https://strongmanarchives.com/viewContest.php?id=267', 'arnold_classifiers', is_wsm=False)
+s= "HafthÃ³r JÃºlÃ­us 'The Mountain' BjÃ¶rnsson"
+s2="Ã�rvai".replace("\u00C3\uFFFD", "A").replace("\u00E1\uFFFD", 'a').replace("\uFFFD", '?')
+s4="I. Árvai"
+s3="M. Ver MagnÃºsson"
+s5="Ã�rvai"
 
-# parse_all_competitions(ARNOLD_CLASSIC_URL, 'europe_strongest_man', is_wsm=False)
-# parse_all_competitions(ARNOLD_CLASSIC_URL, 'arnold_classic', is_wsm=False)
-# parse_all_competitions(WSM_URL, 'world_strongest_man', is_wsm=True)
-# parse_all_competitions(ROGUE_INVITATIONAL_URL, 'rogue_invitational', is_wsm=False)
-# parse_all_competitions(GIANTS_URL, 'giants', is_wsm=False)
+print(s3)
+# print(s3.encode('windows-1252').decode('utf-8'))
+print(fix_encoding(s5))
+
+
+# parse_competition("2004 Arnold's Strongest Man", ARNOLD_CLASSIC_URL, 'arnold_classic', is_wsm=False, force_update=True)
+# parse_competition("1995 World's Strongest Man", WSM_URL, 'world_strongest_man', is_wsm=True, force_update=True)
+
+# parse_all_competitions(ARNOLD_CLASSIC_URL, 'arnold_classic', is_wsm=False, force_update=True)
+# parse_all_competitions(WSM_URL, 'world_strongest_man', is_wsm=True, force_update=True)
+# parse_all_competitions(ROGUE_INVITATIONAL_URL, 'rogue_invitational', is_wsm=False, force_update=True)
+# parse_all_competitions(GIANTS_URL, 'giants', is_wsm=False, force_update=True)
+# parse_all_competitions(WUS_URL, 'wus', is_wsm=False, force_update=True)
+# parse_all_competitions(SHAW_CLASSIC_URL, 'shaw_classic', is_wsm=False, force_update=True)
+# parse_all_competitions(FORCA_BRUTA_URL, 'forca_bruta', is_wsm=False, force_update=True)
+# parse_all_competitions(ULTIMATE_STRONGMAN_URL, 'ultimate_strongman', is_wsm=False, force_update=True)
 
 
 # events_path = '../data/data_raw/rogue/events/2021 Rogue Invitational.csv'
@@ -706,7 +749,7 @@ def to_float(s, default=''):
 # results_path = events_path.replace('events', 'results')
 # transform_csv(results_path, events_path)
 # #
-merge_data('../data/data_raw', '../data/data_transformed')
+merge_data(DATA_RAW_DIR_PATH, DATA_TRANSFORMED_DIR_PATH)
 #
 
 # Get 2 units from 1 result
