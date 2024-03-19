@@ -31,12 +31,14 @@ ULTIMATE_STRONGMAN_URL = 'https://strongmanarchives.com/contests.php?type=30'
 EUROPE_STRONGEST_MAN_URL = 'https://strongmanarchives.com/contests.php?type=9'
 FORCA_BRUTA_URL = 'https://strongmanarchives.com/contests.php?type=10'
 ROGUE_INVITATIONAL_URL = 'https://strongmanarchives.com/contests.php?type=68'
+MAGNUS_CLASSIC = 'https://strongmanarchives.com/contests.php?type=95'
 
 ROOT_PATH = str(Path(os.path.abspath('')).parents[0])
 DATA_RAW_DIR_PATH = os.path.join(ROOT_PATH, 'data/data_raw')
 DATA_TRANSFORMED_DIR_PATH = os.path.join(ROOT_PATH, 'data/data_transformed')
 
 print(DATA_RAW_DIR_PATH)
+
 
 def load_page(url):
     # driver = webdriver.Chrome(ChromeDriverManager().install())
@@ -83,10 +85,12 @@ def load_page_v2(url):
 
     return soup
 
+
 def decode_html(html):
     """Repair special characters, some like: Á and á are replaced with A and a"""
     # return html.replace("\u00C3\uFFFD", "A").replace("\u00E1\uFFFD", 'a').replace("\uFFFD", '?').encode('windows-1252').decode('utf-8')
     return fix_encoding(html).replace("�", "Á")
+
 
 def parse_competition(competition_name, url, dir_name, is_wsm, force_update=False):
     """Parse and save a single competition (results + event data) to CSV"""
@@ -98,7 +102,9 @@ def parse_competition(competition_name, url, dir_name, is_wsm, force_update=Fals
     event_data_dir_path = f'{DATA_RAW_DIR_PATH}/{dir_name}/events'
 
     # Stop scraping if competition file is already downloaded and force_update flag is turned off.
-    if (file_exists(results_data_dir_path, competition_name, is_wsm) and file_exists(event_data_dir_path, competition_name, is_wsm)) and not force_update:
+    if (utils.is_competition_downloaded(results_data_dir_path, competition_name, is_wsm) and
+        utils.is_competition_downloaded(event_data_dir_path, competition_name, is_wsm)) and not force_update:
+
         print('Scraping stopped! Competition file of:', competition_name, ' is already downloaded.')
         return
 
@@ -111,6 +117,7 @@ def parse_competition(competition_name, url, dir_name, is_wsm, force_update=Fals
     save_to_csv(events_data, event_data_dir_path, competition_name, is_wsm)
 
     print('Scraped:', competition_name)
+
 
 def parse_competition_results_data(page):
     """Parse results table to Pandas Dataframe with BS4"""
@@ -147,7 +154,7 @@ def parse_competition_events_data(page):
     for event_data in event_datas:
         lines = event_data.get_text(separator=" ").strip().split('\n')
         data = [line.split(' : ') for line in lines]
-        if len(data) > 1:
+        if data and len(data[0]) == 2:
             df = pd.DataFrame(columns=['Event', 'Info'], data=data)
             event_data_dfs.append(df)
 
@@ -164,10 +171,10 @@ def save_to_csv(data_dfs, dir_path, competition_name, is_wsm):
     if is_wsm:
         finals_dir_path = f'{dir_path}/finals'
         groups_dir_path = f'{dir_path}/groups'
-        create_dir(finals_dir_path)
-        create_dir(groups_dir_path)
+        utils.create_dir(finals_dir_path)
+        utils.create_dir(groups_dir_path)
     else:
-        create_dir(dir_path)
+        utils.create_dir(dir_path)
 
     # Save CSVs
     for table_id, table_df in enumerate(data_dfs):
@@ -179,12 +186,6 @@ def save_to_csv(data_dfs, dir_path, competition_name, is_wsm):
         else:
             table_df.to_csv(f'{dir_path}/{competition_name}.csv', index=False)
 
-def file_exists(dir_path, competition_name, is_wsm):
-    path = f'{dir_path}/{competition_name}.csv'
-    if is_wsm:
-        path = f'{dir_path}/finals/{competition_name}.csv'
-
-    return os.path.isfile(path)
 
 def parse_all_competitions(url, dir_name, is_wsm, force_update=False):
     """Parse all competitions from a specified comp type ex. WSM, Arnold Classic etc."""
@@ -199,11 +200,6 @@ def parse_all_competitions(url, dir_name, is_wsm, force_update=False):
         current_url = BASE_URL + [raw_row.find_all('a', href=True)][0][0]['href']
 
         parse_competition(competition_name, current_url, dir_name, is_wsm, force_update)
-
-
-def create_dir(path):
-    if not os.path.exists(path):
-        os.makedirs(path)
 
 
 def transform_csv(results_path, events_path):
@@ -233,8 +229,10 @@ def transform_csv(results_path, events_path):
     raw_event_results_df, raw_event_points_df, competitors = split_results(results_df)
 
     transformed_event_info, transformed_event_info_df = transform_event_info(raw_event_results_df, event_info_df, info_schema)
-    transformed_result_points_df, transformed_result_units_df, transformed_result_values_df, transformed_event_info_df = transform_results(raw_event_results_df, raw_event_points_df,
-                                                                                                                transformed_event_info, competitors)
+    transformed_result_points_df, transformed_result_units_df, transformed_result_values_df, transformed_event_info_df = transform_results(raw_event_results_df,
+                                                                                                                                           raw_event_points_df,
+                                                                                                                                           transformed_event_info,
+                                                                                                                                           competitors)
 
     transformed_result_points_df = prepapre_df_for_merging(transformed_result_points_df, events_path, results_path)
     transformed_result_units_df = prepapre_df_for_merging(transformed_result_units_df, events_path, results_path)
@@ -271,7 +269,7 @@ def transform_event_info(event_results_df, event_info_df, info_schema):
         info_split = row['Info'].strip('\"').split('/')
 
         for info in info_split:
-            info = remove_braces(info).strip()
+            info = utils.remove_braces(info).strip()
             info_lower = info.lower()
             # results_with_in = [s for s in list(results_df[event_name]) if ' in ' in s]
 
@@ -370,21 +368,23 @@ def transform_results(event_results_df, event_points_df, transformed_event_info,
 
     return final_result_points_df, final_result_units_df, final_result_values_df, pd.DataFrame(transformed_event_info)
 
+
 def preclean_result(result):
     """Clean result before result unit is extrapolated from the raw text"""
-    cleaned_result = remove_text_inside_braces(result).replace('~', '').strip().lower()
+    cleaned_result = utils.remove_text_inside_braces(result).replace('~', '').strip().lower()
 
-    if is_nan(result):
+    if utils.is_nan(result):
         return cleaned_result
 
-    if '-' in result: # 2003 Arnold's Strength Summit - Apollon Wheels had results in format of clean-continentals-presses, we need presses + reps str
+    if '-' in result:  # 2003 Arnold's Strength Summit - Apollon Wheels had results in format of clean-continentals-presses, we need presses + reps str
         cleaned_result = f'{cleaned_result.split('-')[-1]} reps'
-    if 'All' in result: # 2005 Arnold's Strongest Man - Hammer lift had weird result formatting - Rd 2, All (20.45) -> 20.45s when All
-        cleaned_result = f'{get_text_inside_braces(result)} s'
-    if 'Hole' in result: # 2005 Arnold's Strongest Man - Hammer lift had weird result formatting - Rd 2, All (20.45) -> 20.45s when All
+    if 'All' in result:  # 2005 Arnold's Strongest Man - Hammer lift had weird result formatting - Rd 2, All (20.45) -> 20.45s when All
+        cleaned_result = f'{utils.get_text_inside_braces(result)} s'
+    if 'Hole' in result:  # 2005 Arnold's Strongest Man - Hammer lift had weird result formatting - Rd 2, All (20.45) -> 20.45s when All
         cleaned_result = f'{get_text_after_word(cleaned_result, "hole")} points'
 
     return cleaned_result
+
 
 def extract_units_from_results(results: list) -> list:
     """Extracts units from a list of results.
@@ -408,29 +408,12 @@ def extract_units_from_results(results: list) -> list:
         "m": ['m'],
         "s": ['s']
     }
-    flattened_unit_map = flatten_dict(unit_map)
-    units_raw = [filter_str(txt, all_units) for txt in results]
+    flattened_unit_map = utils.flatten_dict(unit_map)
+    units_raw = [utils.filter_str(txt, all_units) for txt in results]
     units = [flattened_unit_map.get(unit, '') for unit in units_raw]
 
     return units
 
-def flatten_dict(map: dict) -> dict:
-    """Flattens a dictionary by swapping keys and values.
-
-    Args:
-        map (dict): A dictionary to be flattened.
-    Returns:
-        dict: A new dictionary with keys and values swapped.
-    Examples:
-        >>> flatten_dict({'a': [1, 2], 'b': [3, 4]})
-        {1: 'a', 2: 'a', 3: 'b', 4: 'b'}
-    """
-
-    flattened_dict = {}
-    for key, values in map.items():
-        for value in values:
-            flattened_dict[value] = key
-    return flattened_dict
 
 def extract_results(results, units, preprocessed_event_info):
     """Extract result values from the scraped tables.
@@ -441,7 +424,7 @@ def extract_results(results, units, preprocessed_event_info):
         return clean_results(results), units
 
     result_lifts, result_measurements = zip(*(result.split(' in ') for result in results if ' in ' in result))
-    result_measurements = [to_float(measurement.split(' ')[0]) for measurement in result_measurements]
+    result_measurements = [utils.to_float(measurement.split(' ')[0]) for measurement in result_measurements]
     result_lifts = [int(lift) for lift in result_lifts]
     num_of_results_with_in = len(result_lifts)
 
@@ -462,7 +445,7 @@ def extract_results(results, units, preprocessed_event_info):
         preprocessed_event_info['second_measurement_unit'] = 'reps' if preprocessed_event_info['second_measurement_unit'] == '' else preprocessed_event_info[
             'second_measurement_unit']
         # If main measurement unit is empty replace it with the second measurement unit
-        if is_nan(preprocessed_event_info['main_measurement_unit']):
+        if utils.is_nan(preprocessed_event_info['main_measurement_unit']):
             preprocessed_event_info['main_measurement_unit'] = preprocessed_event_info['second_measurement_unit']
             preprocessed_event_info['second_measurement_unit'] = math.nan
 
@@ -476,7 +459,7 @@ def extract_results(results, units, preprocessed_event_info):
 
 
 def clean_result(result):
-    numbers = get_floats(str(result))
+    numbers = utils.get_floats(str(result))
     return numbers[0] if numbers else 0
 
 
@@ -519,9 +502,9 @@ def get_implement_and_lifts_num(event_info):
     lifts_num = 0
     for words in implements:
         # Implement lifted multiple times (ex. 3x, 2x..)
-        word = [word.replace('x', '') for word in words.split(' ') if 'x' in word and is_float(word.replace('x', ''))]
+        word = [word.replace('x', '') for word in words.split(' ') if 'x' in word and utils.is_float(word.replace('x', ''))]
         if word:
-            lifts_num += to_float(word[0])
+            lifts_num += utils.to_float(word[0])
         else:
             lifts_num += 1
 
@@ -530,7 +513,7 @@ def get_implement_and_lifts_num(event_info):
 
 def get_lift_num(info):
     """Look for 'x' in the info, if there is a number in front of it then it specifies number of lifts."""
-    return len([word for word in info if 'x' in info and is_float(info.replace('x', ''))])
+    return len([word for word in info if 'x' in info and utils.is_float(info.replace('x', ''))])
 
 
 def get_implements(split_str, info):
@@ -546,9 +529,11 @@ def handle_weight_info(info, info_dict):
 
     return info_dict
 
+
 def get_text_after_word(s, word):
     """First split by the word and then get the first string before the word that we split on. [-2] is there because split() adds an empty string at the end"""
     return s.split(word)[1].split(' ')[-1].strip()
+
 
 def get_float_before_word(s, word):
     """First split by the word and then get the first string before the word that we split on. [-2] is there because split() adds an empty string at the end"""
@@ -558,8 +543,7 @@ def get_float_before_word(s, word):
 def get_int_before_word(s, word):
     """First split by the word and then get the first word before the word that we split on. [-2] is there because split() adds an empty string at the end"""
     num = s.split(word)[0].split(' ')[-2].strip()
-    return to_int(num, default=math.nan)
-
+    return utils.to_int(num, default=math.nan)
 
 
 def read_data(events_path, results_path):
@@ -577,8 +561,8 @@ def prepapre_df_for_merging(df, events_path, results_path):
     """In ordered to merge data, whether it's points, units, values or event info"""
 
     old_cols = list(df.columns)
-    year = get_ints(results_path)[0]
-    comp_name = remove_numbers(os.path.splitext(os.path.basename(events_path))[0])
+    year = utils.get_ints(results_path)[0]
+    comp_name = utils.remove_numbers(os.path.splitext(os.path.basename(events_path))[0])
 
     df['year'] = year
     df['competition_name'] = comp_name
@@ -596,7 +580,7 @@ def merge_data(src, dst):
     raw_results_dfs = []
 
     # dir_path = os.path.join(dst, root.lstrip(src).replace('events', '').strip('\\'))
-    create_dir(dst)
+    utils.create_dir(dst)
 
     default_cols = ['Year', 'Comp name', '#', 'Competitor', 'Country']
 
@@ -609,7 +593,8 @@ def merge_data(src, dst):
             results_path = events_path.replace('events', 'results')
             print(results_path)
 
-            transformed_result_points_df, transformed_result_units_df, transformed_result_values_df, transformed_event_info_df, transformed_raw_results_df = transform_csv(results_path, events_path)
+            transformed_result_points_df, transformed_result_units_df, transformed_result_values_df, transformed_event_info_df, transformed_raw_results_df = transform_csv(
+                results_path, events_path)
 
             result_points_dfs.append(transformed_result_points_df)
             result_units_dfs.append(transformed_result_units_df)
@@ -632,125 +617,51 @@ def merge_data(src, dst):
     raw_results_merged_df.to_csv(os.path.join(dst, 'raw_results.csv'), sep=';', index=False)
 
 
-
-def filter_str(s, word_list, exclude=False):
-    """If exclude is True remove words in string that are in the word list
-        If exclude is False then only keep the words in string that are in the word list"""
-    if exclude:
-        return ' '.join([word for word in s.split(' ') if word.lower() not in word_list]).strip()
-    else:
-        return ' '.join([word for word in s.split(' ') if word.lower() in word_list]).strip()
-
-
 def get_weights(txt):
     txt_cleaned = txt.replace(',', '').replace('+', '').replace('-', ' ')
     words = txt_cleaned.split(' ')
     weight_key_words = ['kg', 'to']
-    return [float(words[i - 1]) for i in range(1, len(words)) if words[i] in weight_key_words and is_float(words[i - 1])]
+    return [float(words[i - 1]) for i in range(1, len(words)) if words[i] in weight_key_words and utils.is_float(words[i - 1])]
 
 
-def get_floats(txt):
-    return [float(x) for x in txt.split(' ') if is_float(x)]
+if __name__ == "__main__":
+    s = "HafthÃ³r JÃºlÃ­us 'The Mountain' BjÃ¶rnsson"
+    s2 = "Ã�rvai".replace("\u00C3\uFFFD", "A").replace("\u00E1\uFFFD", 'a').replace("\uFFFD", '?')
+    s4 = "I. Árvai"
+    s3 = "M. Ver MagnÃºsson"
+    s5 = "Ã�rvai"
 
+    print(s5)
+    # print(s3.encode('windows-1252').decode('utf-8'))
+    print(fix_encoding(s5))
+    print(fix_encoding(s5).replace("�", "Á"))
 
-def get_ints(txt):
-    return [int(x) for x in re.findall("\d+", txt)]
+    # parse_competition("2004 Arnold's Strongest Man", ARNOLD_CLASSIC_URL, 'arnold_classic', is_wsm=False, force_update=True)
+    # parse_competition("1995 World's Strongest Man", WSM_URL, 'world_strongest_man', is_wsm=True, force_update=True)
+    # parse_competition("1991 Europe's Strongest Man", EUROPE_STRONGEST_MAN_URL, 'europe_strongest_man', is_wsm=False, force_update=True)
 
+    # parse_all_competitions(ARNOLD_CLASSIC_URL, 'arnold_classic', is_wsm=False, force_update=True)
+    # parse_all_competitions(WSM_URL, 'world_strongest_man', is_wsm=True, force_update=True)
+    # parse_all_competitions(ROGUE_INVITATIONAL_URL, 'rogue_invitational', is_wsm=False, force_update=True)
+    # parse_all_competitions(GIANTS_URL, 'giants', is_wsm=False, force_update=True)
+    # parse_all_competitions(WUS_URL, 'wus', is_wsm=False, force_update=True)
+    # parse_all_competitions(SHAW_CLASSIC_URL, 'shaw_classic', is_wsm=False, force_update=True)
+    # parse_all_competitions(FORCA_BRUTA_URL, 'forca_bruta', is_wsm=False, force_update=True)
+    # parse_all_competitions(ULTIMATE_STRONGMAN_URL, 'ultimate_strongman', is_wsm=False, force_update=True)
+    # parse_all_competitions(EUROPE_STRONGEST_MAN_URL, 'europe_strongest_man', is_wsm=False, force_update=True)
+    parse_all_competitions(MAGNUS_CLASSIC, 'magnus_classic', is_wsm=False, force_update=True)
 
-def remove_numbers(txt):
-    return re.sub(r'[0-9]+', '', txt).strip()
+    # events_path = '../data/data_raw/rogue/events/2021 Rogue Invitational.csv'
+    # events_path = '../data/data_raw/world_strongest_man/events/finals/2021 WSM Final.csv'
+    # events_path = '../data/data_raw/world_strongest_man/events/groups/2017 WSM Final - group 1.csv'
 
+    # events_path = '../data/data_raw/arnold_classic/events/2020 Arnold Strongman Classic.csv'
 
-def remove_punctuation(txt):
-    if is_nan(txt):
-        return ''
-    return re.sub(r'[^\w\s]', '', txt)
+    # events_path = "../data/data_raw/arnold_classifiers/events/2018 Arnold South America.csv"
+    # results_path = events_path.replace('events', 'results')
+    # transform_csv(results_path, events_path)
+    # #
+    # merge_data(DATA_RAW_DIR_PATH, DATA_TRANSFORMED_DIR_PATH)
+    #
 
-
-def remove_braces(txt):
-    if is_nan(txt):
-        return ''
-    return re.sub("[(\[].*?[)\]]", "", txt)
-
-
-def remove_text_inside_braces(txt):
-    if is_nan(txt):
-        return ''
-    return re.sub("[\(\[].*?[\)\]]", "", txt)
-
-def get_text_inside_braces(txt):
-    return txt[txt.find("(") + 1:txt.find(")")]
-
-def get_float_inside_braces(txt):
-    return to_float(txt[txt.find("(") + 1:txt.find(")")])
-
-def is_nan(x):
-    return x != x
-
-
-def is_float(num):
-    try:
-        float(num)
-        return True
-    except ValueError:
-        return False
-
-
-def is_int(num):
-    try:
-        int(num)
-        return True
-    except ValueError:
-        return False
-
-
-def to_int(s, default=''):
-    """Convert string to int safely."""
-    return float(s) if is_int(s) else default
-
-
-def to_float(s, default=''):
-    """Convert string to float safely."""
-
-    return float(s) if is_float(s) else default
-
-
-s= "HafthÃ³r JÃºlÃ­us 'The Mountain' BjÃ¶rnsson"
-s2="Ã�rvai".replace("\u00C3\uFFFD", "A").replace("\u00E1\uFFFD", 'a').replace("\uFFFD", '?')
-s4="I. Árvai"
-s3="M. Ver MagnÃºsson"
-s5="Ã�rvai"
-
-print(s5)
-# print(s3.encode('windows-1252').decode('utf-8'))
-print(fix_encoding(s5))
-print(fix_encoding(s5).replace("�", "Á"))
-
-
-# parse_competition("2004 Arnold's Strongest Man", ARNOLD_CLASSIC_URL, 'arnold_classic', is_wsm=False, force_update=True)
-# parse_competition("1995 World's Strongest Man", WSM_URL, 'world_strongest_man', is_wsm=True, force_update=True)
-
-# parse_all_competitions(ARNOLD_CLASSIC_URL, 'arnold_classic', is_wsm=False, force_update=True)
-# parse_all_competitions(WSM_URL, 'world_strongest_man', is_wsm=True, force_update=True)
-# parse_all_competitions(ROGUE_INVITATIONAL_URL, 'rogue_invitational', is_wsm=False, force_update=True)
-# parse_all_competitions(GIANTS_URL, 'giants', is_wsm=False, force_update=True)
-# parse_all_competitions(WUS_URL, 'wus', is_wsm=False, force_update=True)
-# parse_all_competitions(SHAW_CLASSIC_URL, 'shaw_classic', is_wsm=False, force_update=True)
-# parse_all_competitions(FORCA_BRUTA_URL, 'forca_bruta', is_wsm=False, force_update=True)
-# parse_all_competitions(ULTIMATE_STRONGMAN_URL, 'ultimate_strongman', is_wsm=False, force_update=True)
-
-
-# events_path = '../data/data_raw/rogue/events/2021 Rogue Invitational.csv'
-# events_path = '../data/data_raw/world_strongest_man/events/finals/2021 WSM Final.csv'
-# events_path = '../data/data_raw/world_strongest_man/events/groups/2017 WSM Final - group 1.csv'
-
-# events_path = '../data/data_raw/arnold_classic/events/2020 Arnold Strongman Classic.csv'
-
-# events_path = "../data/data_raw/arnold_classifiers/events/2018 Arnold South America.csv"
-# results_path = events_path.replace('events', 'results')
-# transform_csv(results_path, events_path)
-# #
-merge_data(DATA_RAW_DIR_PATH, DATA_TRANSFORMED_DIR_PATH)
-#
-
-# Get 2 units from 1 result
+    # Get 2 units from 1 result
