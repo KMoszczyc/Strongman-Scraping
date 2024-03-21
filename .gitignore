@@ -118,4 +118,4 @@ fabric.properties
 
 *.xml
 misc.xml
-.idea
+.idea/
