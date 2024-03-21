@@ -1,20 +1,17 @@
-import numpy as np
 from bs4 import BeautifulSoup
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.support.ui import Select
-from webdriver_manager.chrome import ChromeDriverManager
 import os
 import time
 from requests_html import HTMLSession
-import html
-import re
 from collections import Counter
 import math
 import utils
 from pathlib import Path
 from ftfy import fix_encoding
 
+pd.options.mode.chained_assignment = None
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
 pd.set_option('expand_frame_repr', False)
@@ -269,14 +266,14 @@ def transform_event_info(event_results_df, event_info_df, info_schema):
         info_split = row['Info'].strip('\"').split('/')
 
         for info in info_split:
-            info = utils.remove_braces(info).strip()
+            info = utils.remove_text_inside_braces(info).strip()
             info_lower = info.lower()
             # results_with_in = [s for s in list(results_df[event_name]) if ' in ' in s]
 
             if 'second time limit' in info:
-                info_dict['time_limit'] = get_int_before_word(info, 'second time limit')
+                info_dict['time_limit'] = utils.get_int_before_word(info, 'second time limit')
             if 'meters' in info or 'metres' in info:
-                info_dict['distance'] = get_float_before_word(info, 'meters')
+                info_dict['distance'] = utils.get_float_before_word(info, 'meters')
             if ',' in info:
                 info_dict['implements'] = get_implements(',', info)
             if '+' in info:
@@ -284,17 +281,17 @@ def transform_event_info(event_results_df, event_info_df, info_schema):
             if info_dict['implements']:
                 info_dict['implements_num'] = len(info_dict['implements'])
             if 'implements' in info:
-                info_dict['implements_num'] = get_int_before_word(info, 'implements')
+                info_dict['implements_num'] = utils.get_int_before_word(info, 'implements')
                 info_dict['max_lifts'] = info_dict['implements_num']
             if 'lifts' in info:
-                info_dict['max_lifts'] = get_int_before_word(info, 'lifts')
+                info_dict['max_lifts'] = utils.get_int_before_word(info, 'lifts')
             if 'stairs' in info:
-                info_dict['max_lifts'] = get_int_before_word(info, 'stairs')
+                info_dict['max_lifts'] = utils.get_int_before_word(info, 'stairs')
             if 'steps' in info:  # Stairs
-                steps_num = get_int_before_word(info, 'steps')
+                steps_num = utils.get_int_before_word(info, 'steps')
                 info_dict['max_lifts'] = steps_num if info_dict['lifts_num'] == '' else steps_num * info_dict['lifts_num']
             if 'attempts' in info:
-                info_dict['attempts'] = get_int_before_word(info, 'attempts')
+                info_dict['attempts'] = utils.get_int_before_word(info, 'attempts')
             if 'kg' in info:
                 info_dict = handle_weight_info(info, info_dict)
             if 'deadlift' in event_name_lower and ('deadlift' in info_lower or 'bar' in info_lower or 'tire' in info_lower):
@@ -381,7 +378,7 @@ def preclean_result(result):
     if 'All' in result:  # 2005 Arnold's Strongest Man - Hammer lift had weird result formatting - Rd 2, All (20.45) -> 20.45s when All
         cleaned_result = f'{utils.get_text_inside_braces(result)} s'
     if 'Hole' in result:  # 2005 Arnold's Strongest Man - Hammer lift had weird result formatting - Rd 2, All (20.45) -> 20.45s when All
-        cleaned_result = f'{get_text_after_word(cleaned_result, "hole")} points'
+        cleaned_result = f'{utils.get_text_after_word(cleaned_result, "hole")} points'
 
     return cleaned_result
 
@@ -409,7 +406,7 @@ def extract_units_from_results(results: list) -> list:
         "s": ['s']
     }
     flattened_unit_map = utils.flatten_dict(unit_map)
-    units_raw = [utils.filter_str(txt, all_units) for txt in results]
+    units_raw = [utils.reverse_filter_str(txt, all_units) for txt in results]
     units = [flattened_unit_map.get(unit, '') for unit in units_raw]
 
     return units
@@ -530,21 +527,6 @@ def handle_weight_info(info, info_dict):
     return info_dict
 
 
-def get_text_after_word(s, word):
-    """First split by the word and then get the first string before the word that we split on. [-2] is there because split() adds an empty string at the end"""
-    return s.split(word)[1].split(' ')[-1].strip()
-
-
-def get_float_before_word(s, word):
-    """First split by the word and then get the first string before the word that we split on. [-2] is there because split() adds an empty string at the end"""
-    return float(s.split(word)[0].split(' ')[-2].strip())
-
-
-def get_int_before_word(s, word):
-    """First split by the word and then get the first word before the word that we split on. [-2] is there because split() adds an empty string at the end"""
-    num = s.split(word)[0].split(' ')[-2].strip()
-    return utils.to_int(num, default=math.nan)
-
 
 def read_data(events_path, results_path):
     events_df = pd.read_csv(events_path, sep=',')
@@ -649,7 +631,7 @@ if __name__ == "__main__":
     # parse_all_competitions(FORCA_BRUTA_URL, 'forca_bruta', is_wsm=False, force_update=True)
     # parse_all_competitions(ULTIMATE_STRONGMAN_URL, 'ultimate_strongman', is_wsm=False, force_update=True)
     # parse_all_competitions(EUROPE_STRONGEST_MAN_URL, 'europe_strongest_man', is_wsm=False, force_update=True)
-    parse_all_competitions(MAGNUS_CLASSIC, 'magnus_classic', is_wsm=False, force_update=True)
+    # parse_all_competitions(MAGNUS_CLASSIC, 'magnus_classic', is_wsm=False, force_update=True)
 
     # events_path = '../data/data_raw/rogue/events/2021 Rogue Invitational.csv'
     # events_path = '../data/data_raw/world_strongest_man/events/finals/2021 WSM Final.csv'
@@ -661,7 +643,7 @@ if __name__ == "__main__":
     # results_path = events_path.replace('events', 'results')
     # transform_csv(results_path, events_path)
     # #
-    # merge_data(DATA_RAW_DIR_PATH, DATA_TRANSFORMED_DIR_PATH)
+    merge_data(DATA_RAW_DIR_PATH, DATA_TRANSFORMED_DIR_PATH)
     #
 
     # Get 2 units from 1 result
